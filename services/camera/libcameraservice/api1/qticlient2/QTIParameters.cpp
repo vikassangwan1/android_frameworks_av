@@ -171,6 +171,9 @@ const char KEY_QTI_AE_BRACKET_HDR[] = "ae-bracket-hdr";
 const char AE_BRACKET_OFF[] = "Off";
 const char AE_BRACKET[] = "AE-Bracket";
 
+const char KEY_QTI_VENDOR_AE_BRACKET_MODE[] =
+        "org.codeaurora.qcamera3.ae_bracket.mode";
+
 // HFR
 const char KEY_QTI_VIDEO_HIGH_FRAME_RATE[] = "video-hfr";
 const char KEY_QTI_VIDEO_HIGH_SPEED_RECORDING[] = "video-hsr";
@@ -199,6 +202,9 @@ const char KEY_QTI_DIS[] = "dis";
 
 // Values for raw image formats
 const char QTIParameters::QC_PIXEL_FORMAT_BAYER_MIPI_RAW_10RGGB[] = "bayer-mipi-10rggb";
+
+// Default sharpness value
+int32_t defaultSharpness = 2;
 
 status_t QTIParameters::initialize(void *parametersParent,
             sp<CameraDeviceBase> device, sp<CameraProviderManager> manager) {
@@ -338,7 +344,7 @@ status_t QTIParameters::initialize(void *parametersParent,
     if (availableSharpnessRange.count == 2) {
         ParentParams->params.set(KEY_QTI_MAX_SHARPNESS,availableSharpnessRange.data.i32[1]);
         //Default value
-        ParentParams->params.set(KEY_QTI_SHARPNESS,availableSharpnessRange.data.i32[1]);
+        ParentParams->params.set(KEY_QTI_SHARPNESS, defaultSharpness);
     }
 
     //Saturation
@@ -953,9 +959,14 @@ status_t QTIParameters::updateRequest(CameraMetadata *request) const {
 
     //Video-Hdr
     res = CameraMetadata::getTagFromName(KEY_QTI_VENDOR_VIDEO_HDR_MODE, vTags.get(), &tag);
-    res = request->update(tag,&videoHdr, 1);
-    if (res != OK) {
-        return res;
+    if (res == OK) {
+        res = request->update(tag,&videoHdr, 1);
+        if (res != OK) {
+            return res;
+        }
+    } else {
+        ALOGE("%s: get vendor tag failed for %s with error %d",
+                __FUNCTION__, KEY_QTI_VENDOR_VIDEO_HDR_MODE, res);
     }
 
     if (exposureTime > 0) {
@@ -1037,8 +1048,16 @@ status_t QTIParameters::updateRequest(CameraMetadata *request) const {
 
 status_t QTIParameters::updateRequestForQTICapture(Vector<CameraMetadata> *requests) const {
     status_t res = OK;
+    uint32_t tag = 0;
     sp<VendorTagDescriptor> vTags =
         VendorTagDescriptor::getGlobalVendorTagDescriptor();
+    if ((nullptr == vTags.get()) || (0 >= vTags->getTagCount())) {
+        sp<VendorTagDescriptorCache> cache =
+                VendorTagDescriptorCache::getGlobalVendorTagCache();
+        if (cache.get()) {
+            cache->getVendorTagDescriptor(vendorTagId, &vTags);
+        }
+    }
 
     if (!requests) {
        return BAD_VALUE;
@@ -1101,6 +1120,16 @@ status_t QTIParameters::updateRequestForQTICapture(Vector<CameraMetadata> *reque
                     &aeBracketValues[i], 1);
             if (res != OK) {
                 return res;
+            }
+
+            //Update ae bracket mode to 1.
+            uint8_t AEBracketMode = 1;
+            res = CameraMetadata::getTagFromName(KEY_QTI_VENDOR_AE_BRACKET_MODE, vTags.get(), &tag);
+            if (res == OK) {
+                res = request.update(tag,&AEBracketMode, 1);
+                if (res != OK) {
+                    return res;
+                }
             }
         }
     }
